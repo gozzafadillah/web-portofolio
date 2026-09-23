@@ -17,7 +17,7 @@ function App() {
       {booting && <BootScreen onDone={() => setBooting(false)} />}
       <div className={`transition-opacity duration-500 ${booting ? 'opacity-0' : 'opacity-100'}`}>
         <main>
-          <Hero />
+          <Hero active={!booting} />
         </main>
         <footer className="px-4 pb-8">
           <p className="mono mx-auto max-w-4xl text-center text-xs text-[var(--muted)]">

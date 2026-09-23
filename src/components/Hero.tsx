@@ -23,15 +23,7 @@ function Prompt() {
 const toneClass = (t?: Tone) =>
   t === 'accent' ? 'text-[var(--accent)]' : t === 'fg' ? 'text-[var(--fg)]' : 'text-[var(--muted)]'
 
-function LineRow({
-  line,
-  partial,
-  caret,
-}: {
-  line: Line
-  partial?: number
-  caret?: boolean
-}) {
+function LineRow({ line, partial, caret }: { line: Line; partial?: number; caret?: boolean }) {
   const cut = (s: string) => (partial != null ? s.slice(0, partial) : s)
   const C = caret ? <span className="caret" aria-hidden="true" /> : null
 
@@ -135,9 +127,9 @@ const COMMANDS = [
   'clear',
 ]
 
-const SUDO_TTL = 30_000 // sudo caches the credential for 30s, like Linux
+const SUDO_TTL = 30_000
 
-export default function Hero() {
+export default function Hero({ active = true }: { active?: boolean }) {
   const [log, setLog] = useState<Line[]>(BOOT_LOG)
   const [batch, setBatch] = useState<Line[]>([])
   const [activeIdx, setActiveIdx] = useState(0)
@@ -150,20 +142,43 @@ export default function Hero() {
   const [histPos, setHistPos] = useState(0)
   const [suggestOpen, setSuggestOpen] = useState(false)
   const [suggestIdx, setSuggestIdx] = useState(0)
+  const [kb, setKb] = useState(0)
+  const [isDesktop, setIsDesktop] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches
+  )
 
   const logRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const sudoTsRef = useRef(0) // last successful sudo auth (ms)
+  const sudoTsRef = useRef(0)
 
   const isTyping = batch.length > 0 && activeIdx < batch.length
 
-  // Live command suggestions for the current token.
   const q = value.trim()
   const matches = q && mode === 'cmd' ? COMMANDS.filter((c) => c.toLowerCase().startsWith(q.toLowerCase())) : []
   const showSuggest = mode === 'cmd' && suggestOpen && matches.length > 0 && !matches.includes(q)
   const selIdx = matches.length ? Math.min(suggestIdx, matches.length - 1) : 0
 
-  // Move a finished batch into the permanent log.
+  // Track viewport class (desktop vs mobile) for the two layouts.
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)')
+    const on = () => setIsDesktop(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+
+  // Track on-screen keyboard height (mobile) so the prompt stays above it.
+  useEffect(() => {
+    const vv = window.visualViewport
+    const on = () => setKb(Math.max(0, window.innerHeight - (vv?.height ?? window.innerHeight) - (vv?.offsetTop ?? 0)))
+    on()
+    vv?.addEventListener('resize', on)
+    vv?.addEventListener('scroll', on)
+    return () => {
+      vv?.removeEventListener('resize', on)
+      vv?.removeEventListener('scroll', on)
+    }
+  }, [])
+
   useEffect(() => {
     if (batch.length > 0 && activeIdx >= batch.length) {
       setLog((l) => [...l, ...batch])
@@ -173,7 +188,6 @@ export default function Hero() {
     }
   }, [activeIdx, batch])
 
-  // Typing engine: reveal the active line char-by-char, then advance.
   useEffect(() => {
     if (batch.length === 0 || activeIdx >= batch.length) return
     const cur = batch[activeIdx]
@@ -200,7 +214,6 @@ export default function Hero() {
     return () => window.clearInterval(iv)
   }, [activeIdx, batch])
 
-  // Skip typing on Enter/Space/Esc while a batch is rendering.
   useEffect(() => {
     if (!isTyping) return
     const onKey = (e: KeyboardEvent) => {
@@ -218,19 +231,17 @@ export default function Hero() {
     if (el) el.scrollTop = el.scrollHeight
   }, [log, batch, activeIdx, shown])
 
-  // Keep the prompt ready: refocus the input whenever it's idle (after typing).
   useEffect(() => {
-    if (!isTyping) inputRef.current?.focus({ preventScroll: true })
-  }, [isTyping, mode])
+    if (active && !isTyping) inputRef.current?.focus()
+  }, [active, isTyping, mode, isDesktop])
 
-  const focus = () => inputRef.current?.focus({ preventScroll: true })
+  const focus = () => inputRef.current?.focus()
   const onShellClick = (e: { target: EventTarget | null }) => {
     if (isTyping) {
       setActiveIdx(batch.length)
       return
     }
     const t = e.target as HTMLElement | null
-    // let real links & buttons work; let text selection work — never hijack those.
     if (t && t.closest('a, button')) return
     const sel = window.getSelection()
     if (sel && sel.toString().length > 0) return
@@ -265,7 +276,7 @@ export default function Hero() {
       if (mode === 'cmd') tabComplete()
       return
     }
-    if (mode !== 'cmd') return // sudo: plain password entry
+    if (mode !== 'cmd') return
 
     if (showSuggest) {
       if (e.key === 'ArrowDown') {
@@ -318,7 +329,7 @@ export default function Hero() {
     if (mode === 'sudo') {
       setLog((l) => [...l, { kind: 'out', text: '[sudo] password for fadillah: •••••••' }])
       if (raw === SUDO_PASSWORD) {
-        sudoTsRef.current = Date.now() // start the 30s credential cache
+        sudoTsRef.current = Date.now()
         startOutput(pending ? execPacman(pending) : [])
         setMode('cmd')
         setPending(null)
@@ -357,7 +368,6 @@ export default function Hero() {
     }
     setLog((l) => [...l, echo])
     if (pendingSudo) {
-      // sudo credential cached (< 30s)? run without prompting, like Linux.
       if (Date.now() - sudoTsRef.current < SUDO_TTL) {
         startOutput(execPacman(pendingSudo))
       } else {
@@ -370,7 +380,97 @@ export default function Hero() {
     startOutput(lines)
   }
 
-  return (
+  /* ── shared render pieces ── */
+  const logLines = (
+    <>
+      {log.map((line, i) => (
+        <LineRow key={`l${i}`} line={line} />
+      ))}
+      {batch.slice(0, Math.min(activeIdx + 1, batch.length)).map((line, i) => {
+        const activeLine = i === activeIdx && activeIdx < batch.length
+        const len = typeLen(line)
+        const partial = activeLine && len > 0 ? shown : undefined
+        return <LineRow key={`b${i}`} line={line} partial={partial} caret={activeLine} />
+      })}
+    </>
+  )
+
+  const typingHint = (
+    <p className="mono text-xs text-[var(--muted)]">
+      <span className="text-[var(--accent)]">»</span> mengetik… [ enter ] tampilkan seketika
+    </p>
+  )
+
+  const formUI = (
+    <form onSubmit={submit} className="mt-1 flex flex-wrap items-baseline gap-x-2">
+      {mode === 'sudo' ? (
+        <>
+          <span className="text-[var(--muted)]">[sudo] password for fadillah:</span>
+          <SudoHint />
+        </>
+      ) : (
+        <Prompt />
+      )}
+      <span className="relative min-w-0 flex-1">
+        <span className="break-words whitespace-pre-wrap text-[var(--accent)]">
+          {mode === 'sudo' ? '' : value}
+        </span>
+        <span className="caret" aria-hidden="true" />
+        <input
+          ref={inputRef}
+          type={mode === 'sudo' ? 'password' : 'text'}
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value)
+            setHistPos(history.length)
+            setSuggestOpen(true)
+            setSuggestIdx(0)
+          }}
+          onKeyDown={onKeyDown}
+          spellCheck={false}
+          autoComplete="off"
+          autoCapitalize="off"
+          autoCorrect="off"
+          enterKeyHint="go"
+          aria-label={mode === 'sudo' ? 'Sudo password' : 'Terminal command'}
+          className="cli-input absolute inset-0 h-full w-full text-base text-transparent caret-transparent"
+        />
+      </span>
+    </form>
+  )
+
+  const suggestUI = (cls: string) => (
+    <ul role="listbox" aria-label="Command suggestions" className={cls}>
+      {matches.slice(0, 8).map((m, i) => (
+        <li
+          key={m}
+          role="option"
+          aria-selected={i === selIdx}
+          onPointerDown={(ev) => {
+            ev.preventDefault()
+            accept(m)
+          }}
+          className={`cursor-pointer rounded px-2 py-2 sm:py-1 ${
+            i === selIdx
+              ? 'bg-[hsl(var(--color-accent)/0.12)] text-[var(--accent)]'
+              : 'text-[var(--muted)] hover:bg-[hsl(var(--color-accent)/0.06)]'
+          }`}
+        >
+          <span className="mono">{i === selIdx ? '▸ ' : '  '}</span>
+          {m}
+        </li>
+      ))}
+      {matches.length > 8 && (
+        <li className="px-2 text-xs text-[var(--muted)]">… {matches.length - 8} lagi</li>
+      )}
+      <li className="mono px-2 pt-1 text-[10px] text-[var(--muted)]">
+        ↑↓ / ketuk untuk pilih · Enter · Esc
+      </li>
+    </ul>
+  )
+
+  /* ── desktop: classic single scroll, prompt + suggestions inline ── */
+  const desktop = (
     <section id="hero" className="flex min-h-[100svh] items-center justify-center px-4 py-8">
       <Reveal className="w-full max-w-4xl">
         <TermWindow title="fadillah@arch: ~/portfolio — zsh">
@@ -382,90 +482,44 @@ export default function Hero() {
             aria-live="polite"
             aria-label="Terminal output"
           >
-            {log.map((line, i) => (
-              <LineRow key={`l${i}`} line={line} />
-            ))}
-            {batch.slice(0, Math.min(activeIdx + 1, batch.length)).map((line, i) => {
-              const active = i === activeIdx && activeIdx < batch.length
-              const len = typeLen(line)
-              const partial = active && len > 0 ? shown : undefined
-              return <LineRow key={`b${i}`} line={line} partial={partial} caret={active} />
-            })}
-
-            {isTyping ? (
-              <p className="mono mt-2 text-xs text-[var(--muted)]">
-                <span className="text-[var(--accent)]">»</span> mengetik… [ enter ] tampilkan seketika
-              </p>
-            ) : (
-              <form onSubmit={submit} className="mt-1 flex flex-wrap items-baseline gap-x-2">
-                {mode === 'sudo' ? (
-                  <>
-                    <span className="text-[var(--muted)]">[sudo] password for fadillah:</span>
-                    <SudoHint />
-                  </>
-                ) : (
-                  <Prompt />
-                )}
-                <span className="relative min-w-0 flex-1">
-                  <span className="break-words whitespace-pre-wrap text-[var(--accent)]">
-                    {mode === 'sudo' ? '' : value}
-                  </span>
-                  <span className="caret" aria-hidden="true" />
-                  <input
-                    ref={inputRef}
-                    type={mode === 'sudo' ? 'password' : 'text'}
-                    value={value}
-                    onChange={(e) => {
-                      setValue(e.target.value)
-                      setHistPos(history.length)
-                      setSuggestOpen(true)
-                      setSuggestIdx(0)
-                    }}
-                    onKeyDown={onKeyDown}
-                    spellCheck={false}
-                    autoComplete="off"
-                    aria-label={mode === 'sudo' ? 'Sudo password' : 'Terminal command'}
-                    className="cli-input absolute inset-0 h-full w-full text-base text-transparent caret-transparent"
-                  />
-                </span>
-              </form>
-            )}
-            {!isTyping && showSuggest && (
-              <ul
-                role="listbox"
-                aria-label="Command suggestions"
-                className="mt-2 border-t border-[var(--border)] pt-1"
-              >
-                {matches.slice(0, 8).map((m, i) => (
-                  <li
-                    key={m}
-                    role="option"
-                    aria-selected={i === selIdx}
-                    onMouseDown={(ev) => {
-                      ev.preventDefault()
-                      accept(m)
-                    }}
-                    className={`cursor-pointer px-1 ${
-                      i === selIdx
-                        ? 'bg-[hsl(var(--color-accent)/0.12)] text-[var(--accent)]'
-                        : 'text-[var(--muted)]'
-                    }`}
-                  >
-                    <span className="mono">{i === selIdx ? '▸ ' : '  '}</span>
-                    {m}
-                  </li>
-                ))}
-                {matches.length > 8 && (
-                  <li className="px-1 text-xs text-[var(--muted)]">… {matches.length - 8} lagi</li>
-                )}
-                <li className="mono px-1 pt-1 text-[10px] text-[var(--muted)]">
-                  ↑↓ pilih · Enter ambil · Esc tutup
-                </li>
-              </ul>
-            )}
+            {logLines}
+            {isTyping ? typingHint : formUI}
+            {!isTyping && showSuggest && suggestUI('mt-2 max-h-44 overflow-y-auto border-t border-[var(--border)] pt-1')}
           </div>
         </TermWindow>
       </Reveal>
     </section>
   )
+
+  /* ── mobile: log scrolls, prompt + suggestions pinned above the keyboard ── */
+  const mobile = (
+    <section
+      id="hero"
+      className="flex min-h-[100svh] items-center justify-center px-4 py-6"
+      style={{ paddingBottom: `calc(1.5rem + ${kb}px)` }}
+    >
+      <Reveal className="w-full max-w-4xl">
+        <TermWindow title="fadillah@arch: ~/portfolio — zsh">
+          <div className="flex flex-col" style={{ height: 'min(68svh, 560px)' }}>
+            <div
+              ref={logRef}
+              onClick={onShellClick}
+              className="min-h-0 flex-1 cursor-text overflow-y-auto text-sm leading-relaxed sm:text-base"
+              role="log"
+              aria-live="polite"
+              aria-label="Terminal output"
+            >
+              {logLines}
+            </div>
+            <div className="mt-3 shrink-0 border-t border-[var(--border)] pt-3">
+              {showSuggest && suggestUI('mb-2 max-h-44 overflow-y-auto')}
+              {isTyping ? <div className="py-2">{typingHint}</div> : formUI}
+            </div>
+          </div>
+        </TermWindow>
+      </Reveal>
+    </section>
+  )
+
+  return isDesktop ? desktop : mobile
 }
