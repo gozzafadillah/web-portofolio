@@ -193,6 +193,7 @@ export default function Hero({ active = true }: { active?: boolean }) {
     if (batch.length === 0 || activeIdx >= batch.length) return
     const cur = batch[activeIdx]
     const len = typeLen(cur)
+    const full = cur.kind === 'link' || cur.kind === 'hero' ? '' : cur.text
 
     // Reduced motion: reveal instantly, no typing theater.
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -222,7 +223,7 @@ export default function Hero({ active = true }: { active?: boolean }) {
         timer = window.setTimeout(() => setActiveIdx((i) => i + 1), 320) // breath between lines
         return
       }
-      const ch = cur.text[n - 1]
+      const ch = full[n - 1]
       let d = base + Math.random() * 14
       if (ch === ' ') d += 22
       if ('.,:;-—)]}'.includes(ch)) d += 120 // pause at punctuation, like a real typist
