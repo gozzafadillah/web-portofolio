@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { TermWindow, Reveal } from './ui'
+import SnakeGame, { type SnakeMode } from './SnakeGame'
+import TetrisGame from './TetrisGame'
 import {
   execPacman,
   handleCommand,
@@ -132,6 +134,10 @@ const COMMANDS = [
   'sudo pacman social-media -t linkedin',
   'sudo pacman latest-career',
   'sudo pacman -h',
+  'bash ./snake -t wall',
+  'bash ./snake -t no-wall',
+  'bash ./snake',
+  'bash ./tetris',
   'clear',
 ]
 
@@ -151,6 +157,7 @@ export default function Hero({ active = true }: { active?: boolean }) {
   const [suggestOpen, setSuggestOpen] = useState(false)
   const [suggestIdx, setSuggestIdx] = useState(0)
   const [modalOpen, setModalOpen] = useState(false)
+  const [gameMode, setGameMode] = useState<SnakeMode | 'tetris' | null>(null)
   const [kb, setKb] = useState(0)
   const [isDesktop, setIsDesktop] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches
@@ -422,7 +429,7 @@ export default function Hero({ active = true }: { active?: boolean }) {
     }
 
     const echo: Line = { kind: 'cmd', text: raw }
-    const { lines, pendingSudo, clear } = handleCommand(raw)
+    const { lines, pendingSudo, clear, game } = handleCommand(raw)
 
     if (clear) {
       setLog([])
@@ -433,6 +440,11 @@ export default function Hero({ active = true }: { active?: boolean }) {
       return
     }
     setLog((l) => [...l, echo])
+    if (game) {
+      closeModal()
+      setGameMode(game)
+      return
+    }
     if (pendingSudo) {
       if (Date.now() - sudoTsRef.current < SUDO_TTL) {
         startOutput(execPacman(pendingSudo))
@@ -452,6 +464,17 @@ export default function Hero({ active = true }: { active?: boolean }) {
   function submit(e: FormEvent) {
     e.preventDefault()
     execute(value)
+  }
+
+  const onGameExit = (score: number, high: number) => {
+    const g = gameMode
+    setGameMode(null)
+    const label = g === 'tetris' ? 'tetris' : `snake · ${g === 'walls' ? 'tembok' : 'tanpa tembok'}`
+    startOutput([
+      { kind: 'out', tone: 'accent', text: `${label} — selesai` },
+      { kind: 'out', tone: 'muted', text: `skor kamu: ${score}   ·   high score: ${high}` },
+      { kind: 'out', tone: 'muted', text: 'ketik command game untuk main lagi' },
+    ])
   }
 
   /* ── shared render pieces ── */
@@ -653,8 +676,26 @@ export default function Hero({ active = true }: { active?: boolean }) {
 
   return (
     <>
-      {isDesktop ? desktop : mobile}
-      {!isDesktop && (
+      {gameMode ? (
+        <section id="hero" className="flex min-h-[100svh] items-center justify-center px-4 py-8">
+          <div className="w-full max-w-4xl">
+            <TermWindow
+              title={gameMode === 'tetris' ? 'tetris' : `snake · ${gameMode === 'walls' ? 'tembok' : 'tanpa tembok'}`}
+            >
+              {gameMode === 'tetris' ? (
+                <TetrisGame onExit={onGameExit} />
+              ) : (
+                <SnakeGame mode={gameMode} onExit={onGameExit} />
+              )}
+            </TermWindow>
+          </div>
+        </section>
+      ) : isDesktop ? (
+        desktop
+      ) : (
+        mobile
+      )}
+      {!isDesktop && !gameMode && (
         <div
           className={`fixed inset-0 z-[200] bg-black/70 p-4 transition-opacity ${
             modalOpen ? 'opacity-100' : 'pointer-events-none opacity-0'

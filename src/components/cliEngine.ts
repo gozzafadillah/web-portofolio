@@ -39,6 +39,11 @@ actions (sudo pacman):
   sudo pacman social-media -t linkedin    linkedin
   sudo pacman latest-career               where I work now
 
+game:
+  bash ./snake -t wall      ular dengan tembok (nabrak = mati)
+  bash ./snake -t no-wall   ular tanpa tembok (tembus tepi)
+  bash ./tetris             tetris klasik (skor + level + high score)
+
 other:
   clear | cls             clear screen
   help | -h | --help      show this help
@@ -46,6 +51,15 @@ other:
 notes:
   ↑↓ history · Tab complete · ambiguous → menu: ↑↓ pilih, Enter
   sudo caches your credential for 30s (like Linux)`
+
+export const SNAKE_USAGE = `snake — main ular di terminal
+
+usage: bash ./snake -t <mode>
+  bash ./snake -t wall      ada tembok: nabrak dinding = mati
+  bash ./snake -t no-wall   tanpa tembok: tembus tepi (wrap)
+
+controls : panah / WASD · geser layar · tombol ▲▼◀▶
+points   : +1 tiap makan, makin cepat seiring skor. high score per mode.`
 
 /* ── content builders ── */
 
@@ -194,7 +208,7 @@ function execContent(body: string): Line[] | null {
 /* Handles one submitted command line (before sudo auth). */
 export function handleCommand(
   raw: string
-): { lines: Line[]; pendingSudo?: string; clear?: boolean } {
+): { lines: Line[]; pendingSudo?: string; clear?: boolean; game?: 'walls' | 'nowalls' | 'tetris' } {
   const value = raw.trim()
   if (!value) return { lines: [] }
 
@@ -213,6 +227,25 @@ export function handleCommand(
     if (!isSudo) return { lines: [{ kind: 'err', text: `error: '${op}' needs root. try: sudo pacman ${op}` }] }
     return { lines: [], pendingSudo: body }
   }
+
+  // snake game: bash ./snake -t wall | no-wall
+  const t = body.toLowerCase().trim()
+  const s = t.replace(/^bash\s+/, '').replace(/^\.\//, '').trim()
+  if (/^snake\b/.test(s)) {
+    const arg = s.replace(/^snake\s*/, '').trim()
+    const m =
+      arg.match(/(?:-t|--type|--mode)\s+["']?([a-z-]+)["']?/) || arg.match(/^["']?([a-z-]+)["']?$/)
+    const val = m ? m[1] : ''
+    if (!val) return { lines: [{ kind: 'pre', text: SNAKE_USAGE }] }
+    if (/^(no-?walls?|wrap|tanpa[-_ ]?tembok)$/.test(val)) return { lines: [], game: 'nowalls' }
+    if (/^(walls?|tembok|bounded)$/.test(val)) return { lines: [], game: 'walls' }
+    return {
+      lines: [{ kind: 'err', text: `error: mode '${val}' tidak dikenal — pakai: bash ./snake -t wall | no-wall` }],
+    }
+  }
+
+  // tetris game: bash ./tetris
+  if (/^(?:bash\s+)?(?:\.\/)?(?:play\s+)?tetris\b/.test(t)) return { lines: [], game: 'tetris' }
 
   const content = execContent(body)
   if (content) return { lines: content }
