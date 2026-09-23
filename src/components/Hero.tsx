@@ -85,21 +85,29 @@ function LineRow({ line, partial, caret }: { line: Line; partial?: number; caret
 }
 
 function SudoHint() {
+  const [open, setOpen] = useState(false)
   return (
     <span className="group relative inline-flex">
       <button
         type="button"
         aria-label="Tampilkan petunjuk password sudo"
-        className="ml-1 rounded border border-[var(--border)] px-1.5 text-xs text-[var(--muted)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+        aria-expanded={open}
+        onClick={(e) => {
+          e.stopPropagation()
+          setOpen((o) => !o)
+        }}
+        className="ml-1 inline-flex h-8 w-8 items-center justify-center rounded border border-[var(--border)] text-xs text-[var(--muted)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] sm:h-6 sm:w-6"
       >
         ?
       </button>
       <span
         role="tooltip"
-        className="pointer-events-none absolute bottom-full left-0 z-10 mb-2 w-max max-w-[16rem] rounded border border-[var(--border)] bg-[hsl(var(--color-surface-2))] px-3 py-2 text-xs text-[var(--muted)] opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+        className={`pointer-events-none z-[300] w-max max-w-[16rem] break-words rounded border border-[var(--border)] bg-[hsl(var(--color-surface-2))] px-3 py-2 text-xs text-[var(--muted)] shadow-lg transition-opacity duration-150 fixed bottom-6 left-1/2 -translate-x-1/2 sm:absolute sm:bottom-full sm:left-0 sm:mb-2 sm:translate-x-0 ${
+          open ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+        }`}
       >
-        password: <span className="mono text-[var(--accent)]">fadillah</span> — santai, ini cuma
-        porto web, bukan beneran :D
+        password: <span className="mono text-[var(--accent)]">{SUDO_PASSWORD}</span> — santai, ini
+        cuma porto web, bukan beneran :D
       </span>
     </span>
   )
@@ -385,7 +393,15 @@ export default function Hero({ active = true }: { active?: boolean }) {
         const t = tries + 1
         setTries(t)
         if (t >= 3) {
-          setLog((l) => [...l, { kind: 'err', text: 'sudo: 3 incorrect password attempts' }])
+          setLog((l) => [
+            ...l,
+            { kind: 'err', text: 'sudo: 3 incorrect password attempts' },
+            {
+              kind: 'out',
+              tone: 'accent',
+              text: `passwordnya: ${SUDO_PASSWORD} — santai, ini cuma porto web kok :D`,
+            },
+          ])
           setMode('cmd')
           setPending(null)
           setTries(0)
