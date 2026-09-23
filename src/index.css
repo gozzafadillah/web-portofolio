@@ -129,14 +129,15 @@ section[id] {
 .prompt .at { color: hsl(var(--color-cyan)); }
 .prompt .path { color: hsl(var(--color-amber)); }
 
-/* Blinking block caret — a real terminal cursor. */
+/* Blinking block caret — a real terminal cursor with a soft phosphor glow. */
 .caret {
   display: inline-block;
   width: 0.55ch;
-  height: 1em;
-  vertical-align: -0.15em;
+  height: 1.05em;
+  vertical-align: text-bottom;
   background: hsl(var(--color-accent));
   margin-left: 1px;
+  box-shadow: 0 0 8px hsl(var(--color-accent) / 0.55);
 }
 
 /* CLI input: no box, no border, no native caret.
@@ -160,11 +161,11 @@ section[id] {
   margin: 0;
 }
 @media (prefers-reduced-motion: no-preference) {
-  .caret { animation: blink 1.05s steps(2, start) infinite; }
+  .caret { animation: blink 1.15s ease-in-out infinite; }
 }
 @keyframes blink {
-  0%, 50% { opacity: 1; }
-  50.01%, 100% { opacity: 0; }
+  0%, 42% { opacity: 1; }
+  72%, 100% { opacity: 0.18; }
 }
 
 /* ── Scroll reveal ── */

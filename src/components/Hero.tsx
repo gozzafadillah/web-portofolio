@@ -142,6 +142,7 @@ export default function Hero({ active = true }: { active?: boolean }) {
   const [histPos, setHistPos] = useState(0)
   const [suggestOpen, setSuggestOpen] = useState(false)
   const [suggestIdx, setSuggestIdx] = useState(0)
+  const [modalOpen, setModalOpen] = useState(false)
   const [kb, setKb] = useState(0)
   const [isDesktop, setIsDesktop] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches
@@ -192,26 +193,43 @@ export default function Hero({ active = true }: { active?: boolean }) {
     if (batch.length === 0 || activeIdx >= batch.length) return
     const cur = batch[activeIdx]
     const len = typeLen(cur)
+
+    // Reduced motion: reveal instantly, no typing theater.
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setShown(len)
+      const t0 = window.setTimeout(() => setActiveIdx((i) => i + 1), 0)
+      return () => window.clearTimeout(t0)
+    }
+
     if (len === 0) {
       setShown(0)
-      const t = window.setTimeout(() => setActiveIdx((i) => i + 1), 45)
+      const t = window.setTimeout(() => setActiveIdx((i) => i + 1), 320)
       return () => window.clearTimeout(t)
     }
+
+    // Human-ish cadence: one char at a time with jitter + pauses. Longer output
+    // types a touch faster so it never becomes tedious.
+    const total = batch.reduce((s, l) => s + typeLen(l), 0)
+    const base = Math.max(13, Math.min(50, 3400 / Math.max(total, 1)))
+
     let n = 0
     setShown(0)
-    const dur = Math.min(Math.max(len * 5, 120), 900)
-    const step = Math.max(1, Math.ceil((len * 20) / dur))
-    const iv = window.setInterval(() => {
-      n += step
+    let timer = 0
+    const tick = () => {
+      n += 1
+      setShown(n)
       if (n >= len) {
-        setShown(len)
-        window.clearInterval(iv)
-        setActiveIdx((i) => i + 1)
-      } else {
-        setShown(n)
+        timer = window.setTimeout(() => setActiveIdx((i) => i + 1), 320) // breath between lines
+        return
       }
-    }, 20)
-    return () => window.clearInterval(iv)
+      const ch = cur.text[n - 1]
+      let d = base + Math.random() * 14
+      if (ch === ' ') d += 22
+      if ('.,:;-—)]}'.includes(ch)) d += 120 // pause at punctuation, like a real typist
+      timer = window.setTimeout(tick, d)
+    }
+    timer = window.setTimeout(tick, 140)
+    return () => window.clearTimeout(timer)
   }, [activeIdx, batch])
 
   useEffect(() => {
@@ -232,10 +250,26 @@ export default function Hero({ active = true }: { active?: boolean }) {
   }, [log, batch, activeIdx, shown])
 
   useEffect(() => {
-    if (active && !isTyping) inputRef.current?.focus()
-  }, [active, isTyping, mode, isDesktop])
+    if (isDesktop && active && !isTyping) inputRef.current?.focus()
+  }, [isDesktop, active, isTyping, mode])
+
+  // Close the phone keyboard whenever the mobile modal is dismissed.
+  useEffect(() => {
+    if (!modalOpen && !isDesktop) inputRef.current?.blur()
+  }, [modalOpen, isDesktop])
 
   const focus = () => inputRef.current?.focus()
+  const openModal = () => {
+    setModalOpen(true)
+    setSuggestOpen(false)
+    setSuggestIdx(0)
+    // Synchronous, inside the tap gesture — this is what opens the phone keyboard.
+    inputRef.current?.focus()
+  }
+  const closeModal = () => {
+    setModalOpen(false)
+    setSuggestOpen(false)
+  }
   const onShellClick = (e: { target: EventTarget | null }) => {
     if (isTyping) {
       setActiveIdx(batch.length)
@@ -255,6 +289,13 @@ export default function Hero({ active = true }: { active?: boolean }) {
     focus()
   }
 
+  // Picking a suggestion: on mobile run it right away (auto-Enter); on desktop
+  // just complete the line so it can still be edited before Enter.
+  function onPick(cmd: string) {
+    if (isDesktop) accept(cmd)
+    else execute(cmd)
+  }
+
   function tabComplete() {
     if (matches.length === 0) return
     if (matches.length === 1) {
@@ -271,6 +312,12 @@ export default function Hero({ active = true }: { active?: boolean }) {
   }
 
   function onKeyDown(e: ReactKeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      if (showSuggest) setSuggestOpen(false)
+      else if (modalOpen) closeModal()
+      return
+    }
     if (e.key === 'Tab') {
       e.preventDefault()
       if (mode === 'cmd') tabComplete()
@@ -319,9 +366,7 @@ export default function Hero({ active = true }: { active?: boolean }) {
     setShown(0)
   }
 
-  function submit(e: FormEvent) {
-    e.preventDefault()
-    const raw = value
+  function execute(raw: string) {
     setValue('')
     setSuggestOpen(false)
     setSuggestIdx(0)
@@ -334,6 +379,7 @@ export default function Hero({ active = true }: { active?: boolean }) {
         setMode('cmd')
         setPending(null)
         setTries(0)
+        closeModal()
       } else {
         const t = tries + 1
         setTries(t)
@@ -342,8 +388,10 @@ export default function Hero({ active = true }: { active?: boolean }) {
           setMode('cmd')
           setPending(null)
           setTries(0)
+          closeModal()
         } else {
           setLog((l) => [...l, { kind: 'err', text: 'Sorry, try again.' }])
+          focus()
         }
       }
       return
@@ -364,20 +412,29 @@ export default function Hero({ active = true }: { active?: boolean }) {
       setBatch([])
       setActiveIdx(0)
       setShown(0)
+      closeModal()
       return
     }
     setLog((l) => [...l, echo])
     if (pendingSudo) {
       if (Date.now() - sudoTsRef.current < SUDO_TTL) {
         startOutput(execPacman(pendingSudo))
+        closeModal()
       } else {
         setMode('sudo')
         setPending(pendingSudo)
         setTries(0)
+        focus() // stay in the modal, keyboard ready for the password
       }
       return
     }
     startOutput(lines)
+    closeModal()
+  }
+
+  function submit(e: FormEvent) {
+    e.preventDefault()
+    execute(value)
   }
 
   /* ── shared render pieces ── */
@@ -439,6 +496,41 @@ export default function Hero({ active = true }: { active?: boolean }) {
     </form>
   )
 
+  // Mobile modal input: a plain, visible, large field (reliable to type into).
+  const mobileInputUI = (
+    <form onSubmit={submit} className="mt-1">
+      <div className="flex items-baseline gap-2">
+        {mode === 'sudo' ? (
+          <>
+            <span className="text-[var(--muted)]">[sudo] password for fadillah:</span>
+            <SudoHint />
+          </>
+        ) : (
+          <Prompt />
+        )}
+      </div>
+      <input
+        ref={inputRef}
+        type={mode === 'sudo' ? 'password' : 'text'}
+        value={value}
+        onChange={(e) => {
+          setValue(e.target.value)
+          setHistPos(history.length)
+          setSuggestOpen(true)
+          setSuggestIdx(0)
+        }}
+        onKeyDown={onKeyDown}
+        spellCheck={false}
+        autoComplete="off"
+        autoCapitalize="off"
+        autoCorrect="off"
+        enterKeyHint="go"
+        aria-label={mode === 'sudo' ? 'Sudo password' : 'Terminal command'}
+        className="mt-2 w-full rounded-md border border-[var(--border)] bg-transparent px-3 py-3 text-base text-[var(--accent)] caret-[var(--accent)] outline-none focus:border-[var(--accent)]"
+      />
+    </form>
+  )
+
   const suggestUI = (cls: string) => (
     <ul role="listbox" aria-label="Command suggestions" className={cls}>
       {matches.slice(0, 8).map((m, i) => (
@@ -446,9 +538,9 @@ export default function Hero({ active = true }: { active?: boolean }) {
           key={m}
           role="option"
           aria-selected={i === selIdx}
-          onPointerDown={(ev) => {
-            ev.preventDefault()
-            accept(m)
+          onClick={(e) => {
+            e.stopPropagation()
+            onPick(m)
           }}
           className={`cursor-pointer rounded px-2 py-2 sm:py-1 ${
             i === selIdx
@@ -512,8 +604,29 @@ export default function Hero({ active = true }: { active?: boolean }) {
               {logLines}
             </div>
             <div className="mt-3 shrink-0 border-t border-[var(--border)] pt-3">
-              {showSuggest && suggestUI('mb-2 max-h-44 overflow-y-auto')}
-              {isTyping ? <div className="py-2">{typingHint}</div> : formUI}
+              {isTyping ? (
+                <button
+                  type="button"
+                  onClick={() => setActiveIdx(batch.length)}
+                  className="w-full text-left"
+                >
+                  {typingHint}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={openModal}
+                  className="flex w-full items-baseline gap-2 rounded px-1 py-2 text-left transition hover:bg-[hsl(var(--color-accent)/0.06)]"
+                >
+                  {mode === 'sudo' ? (
+                    <span className="text-[var(--muted)]">[sudo] password for fadillah:</span>
+                  ) : (
+                    <Prompt />
+                  )}
+                  <span className="caret" aria-hidden="true" />
+                  <span className="ml-2 text-xs text-[var(--muted)]">ketuk untuk mengetik</span>
+                </button>
+              )}
             </div>
           </div>
         </TermWindow>
@@ -521,5 +634,32 @@ export default function Hero({ active = true }: { active?: boolean }) {
     </section>
   )
 
-  return isDesktop ? desktop : mobile
+  return (
+    <>
+      {isDesktop ? desktop : mobile}
+      {!isDesktop && (
+        <div
+          className={`fixed inset-0 z-[200] bg-black/70 p-4 transition-opacity ${
+            modalOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
+          }`}
+          onClick={closeModal}
+        >
+          <div
+            className="mx-auto mt-[6vh] max-w-lg rounded-lg border border-[var(--border)] bg-[hsl(var(--color-surface))] p-4 shadow-2xl"
+            onClick={(e) => {
+              e.stopPropagation()
+              focus()
+            }}
+          >
+            {mobileInputUI}
+            {showSuggest &&
+              suggestUI('mt-3 max-h-56 overflow-y-auto border-t border-[var(--border)] pt-2')}
+            <p className="mono mt-3 text-[10px] text-[var(--muted)]">
+              Enter = jalankan &amp; lihat hasil · Esc/Batal = tutup
+            </p>
+          </div>
+        </div>
+      )}
+    </>
+  )
 }
