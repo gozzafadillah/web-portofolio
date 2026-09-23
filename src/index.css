@@ -1,0 +1,203 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────
+   Linux terminal palette — phosphor green on near-black.
+   The dark terminal look is the deliberate identity here, not a
+   category reflex: the subject is a backend/Linux engineer.
+   ───────────────────────────────────────────────────────────── */
+:root {
+  --color-bg: 150 22% 4%;
+  --color-surface: 150 18% 7%;
+  --color-surface-2: 150 16% 10%;
+  --color-border: 150 14% 18%;
+  --color-fg: 140 25% 88%;
+  --color-fg-dim: 140 10% 58%;
+  --color-accent: 145 85% 58%;
+  --color-accent-hover: 145 85% 66%;
+  --color-focus-ring: 145 90% 60%;
+  --color-amber: 40 95% 62%;
+  --color-cyan: 185 85% 60%;
+
+  --bg: hsl(var(--color-bg));
+  --surface: hsl(var(--color-surface));
+  --card: hsl(var(--color-surface-2));
+  --border: hsl(var(--color-border));
+  --fg: hsl(var(--color-fg));
+  --muted: hsl(var(--color-fg-dim));
+  --accent: hsl(var(--color-accent));
+  --accent-dark: hsl(var(--color-accent-hover));
+
+  color-scheme: dark;
+}
+
+* {
+  -webkit-font-smoothing: antialiased;
+}
+
+html {
+  font-size: 16px;
+  scrollbar-color: hsl(var(--color-border)) hsl(var(--color-bg));
+}
+
+html {
+  @media (prefers-reduced-motion: no-preference) {
+    scroll-behavior: smooth;
+  }
+}
+
+body {
+  background: hsl(var(--color-bg));
+  color: hsl(var(--color-fg));
+  font-family: ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  line-height: 1.6;
+  letter-spacing: 0;
+  min-height: 100svh;
+  overflow-x: hidden;
+}
+
+/* CRT background plane: faint grid + scanlines. Static — carries texture
+   without self-starting motion near reading content. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(hsl(var(--color-accent) / 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--color-accent) / 0.04) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  opacity: 0.35;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 2px,
+    rgba(0, 0, 0, 0.35) 3px,
+    transparent 4px
+  );
+}
+
+/* Prose */
+.prose { max-width: 68ch; }
+.prose p { margin: 0 0 1.25em; }
+.prose a {
+  color: hsl(var(--color-accent));
+  text-underline-offset: 3px;
+}
+
+/* Headings — mono, tight, authoritative */
+h1, h2, h3 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+h1 { font-size: clamp(1.75rem, 6vw, 3.25rem); }
+h2 { font-size: clamp(1.15rem, 3vw, 1.5rem); }
+h3 { font-size: 1.05rem; }
+
+p { margin: 0; }
+ul { padding-left: 1.25em; }
+li { margin: 0.35em 0; }
+
+a { color: inherit; }
+
+/* Focus ring — visible on dark */
+:focus-visible {
+  outline: 2px solid hsl(var(--color-focus-ring));
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* In-page anchors clear the sticky bar */
+section[id] {
+  scroll-margin-top: 5rem;
+  scroll-margin-block-start: 5rem;
+}
+
+/* ── Prompt / terminal primitives ── */
+.prompt {
+  color: hsl(var(--color-accent));
+}
+.prompt .at { color: hsl(var(--color-cyan)); }
+.prompt .path { color: hsl(var(--color-amber)); }
+
+/* Blinking block caret — a real terminal cursor. */
+.caret {
+  display: inline-block;
+  width: 0.55ch;
+  height: 1em;
+  vertical-align: -0.15em;
+  background: hsl(var(--color-accent));
+  margin-left: 1px;
+}
+
+/* CLI input: no box, no border, no native caret.
+   The block caret is the focus indicator (verified replacement). */
+.cli-input {
+  border: 0;
+  background: transparent;
+  outline: none;
+  box-shadow: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.cli-input:focus,
+.cli-input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.cli-input::-webkit-outer-spin-button,
+.cli-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .caret { animation: blink 1.05s steps(2, start) infinite; }
+}
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+
+/* ── Scroll reveal ── */
+.reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  filter: blur(3px);
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .reveal.is-visible {
+    transition:
+      opacity 600ms cubic-bezier(0.16, 1, 0.32, 1),
+      transform 600ms cubic-bezier(0.16, 1, 0.32, 1),
+      filter 600ms cubic-bezier(0.16, 1, 0.32, 1);
+    transition-delay: var(--reveal-delay, 0ms);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; transform: none; filter: none; }
+}
+
+/* Reduced motion: keep function, drop travel. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .caret { opacity: 1 !important; }
+}
